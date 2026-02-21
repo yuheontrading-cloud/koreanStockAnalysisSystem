@@ -15,7 +15,7 @@ news:
   filter_by_target_date: true # 선택한 날짜 뉴스만 포함
   target_date_tolerance_days: 1 # 0=해당일만, 1 이상=전후 N일 뉴스 포함
   parse_fail_keep: true        # 날짜 파싱 실패 시 해당 뉴스 유지(true) 여부
-  fetch_article_body: true    # 링크로 본문 수집 후 요약
+  fetch_article_body: true    # 링크로 본문 수집 후 요약 (false면 실행 빠름)
   summary_max_chars: 300      # 요약 글자 수 (본문 앞 N자)
   article_request_delay_seconds: 0.5 # 본문 요청 간격
   max_articles_fetch_body: 5  # 종목당 본문 수집할 뉴스 수 (요청 수 제한)
