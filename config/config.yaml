@@ -14,7 +14,7 @@ news:
   request_delay_seconds: 0.3  # 스크래핑 시 요청 간격
   filter_by_target_date: true # 선택한 날짜 뉴스만 포함
   target_date_tolerance_days: 7 # 0=해당일만, 1 이상=전후 N일 뉴스 포함
-  parse_fail_keep: false       # 날짜 파싱 실패 시 해당 뉴스 제외
+  parse_fail_keep: true        # 날짜 파싱 실패 시에도 해당 뉴스 유지 (뉴스 수집 완화)
   fetch_article_body: true    # 링크로 본문 수집 후 요약 (false면 실행 빠름)
   summary_max_chars: 300      # 요약 글자 수 (본문 앞 N자)
   article_request_delay_seconds: 0.5 # 본문 요청 간격
@@ -25,7 +25,6 @@ news:
 theme:
   top_n_sectors: 10          # 상위 N개 주도 테마
   weight_by_change_pct: true # true: 상승률 기준 주도 테마, false: 종목 수 기준
-  only_top1_theme: true      # true: 1위 주도 테마 소속 종목만 사용, false: 스크리너 통과 전체
 
 # 밸류에이션 (업종 대비 판정)
 valuation:
@@ -41,7 +40,8 @@ ranker:
   weight_news: 0.20      # 뉴스/관심
   weight_theme: 0.50     # 테마 강도 (주도 테마 반영 강화)
   weight_valuation: 0.10 # 밸류(저평가 가산)
-  theme_rank_exponential: true  # true: 1~3위 테마 점수 차이 확대 (비선형)
+  theme_weight_top1_only: true  # true: 테마 가중치를 1위 테마에만 (1위=100, 나머지=0)
+  theme_rank_exponential: true  # true: 1~3위 테마 점수 차이 확대 (theme_weight_top1_only false일 때)
   theme_top_bonus: 20    # 1~3위 공통 가산 (차등 미설정 시)
   theme_top_bonus_1: 25  # 1위 주도 테마 가산
   theme_top_bonus_2: 15  # 2위 주도 테마 가산
