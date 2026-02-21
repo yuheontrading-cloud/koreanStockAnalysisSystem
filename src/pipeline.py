@@ -30,6 +30,16 @@ def run_pipeline(target_date: str, save_output: bool = True):
     for i, sec in enumerate(themes_df["sector"].tolist(), start=1):
         sector_rank[sec] = i
 
+    # 2b. 1위 주도 테마만 사용 옵션: screened를 1위 테마 소속 종목만으로 제한
+    only_top1 = cfg.get("theme", {}).get("only_top1_theme", False)
+    if only_top1 and not themes_df.empty and not ticker_to_sector.empty:
+        top_sector = themes_df["sector"].iloc[0]
+        top1_tickers = ticker_to_sector[ticker_to_sector == top_sector].index.tolist()
+        screened = screened[screened["ticker"].astype(str).str.zfill(6).isin(top1_tickers)].copy()
+        if screened.empty:
+            print(f"[{target_date}] 1위 주도 테마({top_sector}) 소속 종목 없음.")
+            return
+
     # 3. Valuation (with sector for relative PER/PBR)
     valuation_df = valuation.run_valuation(
         screened["ticker"].astype(str).str.zfill(6).tolist(),

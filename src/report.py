@@ -10,6 +10,17 @@ import pandas as pd
 from src.config_loader import load_config
 
 
+def _fmt_cell(val) -> str:
+    """Format cell for display: float/number -> 2 decimal places, else str."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    if isinstance(val, (int, float)):
+        if isinstance(val, float):
+            return f"{val:.2f}"
+        return str(int(val))
+    return str(val)
+
+
 def strip_html_then_escape(s: str) -> str:
     """Replace <br> etc. with space, strip tags, then html.escape. Use for news title/summary/date."""
     if s is None or (isinstance(s, float) and pd.isna(s)):
@@ -53,7 +64,7 @@ def _df_to_html_with_change_color(df: pd.DataFrame, change_pct_columns: list[str
         for col in df.columns:
             val = row[col]
             cls = cell_class(col, val)
-            esc = html_lib.escape(str(val) if pd.notna(val) else "")
+            esc = html_lib.escape(_fmt_cell(val) if pd.notna(val) else "")
             if cls:
                 html.append(f"<td class='{cls}'>{esc}</td>")
             else:
@@ -78,11 +89,14 @@ def _news_df_to_html(news_df: pd.DataFrame) -> str:
             if pd.isna(val):
                 s = ""
             else:
-                s = str(val)
-                if s.strip():
-                    s = strip_html_then_escape(s)
+                if isinstance(val, (int, float)):
+                    s = html_lib.escape(_fmt_cell(val))
                 else:
-                    s = html_lib.escape(s)
+                    s = str(val)
+                    if s.strip():
+                        s = strip_html_then_escape(s)
+                    else:
+                        s = html_lib.escape(s)
             html.append(f"<td>{s}</td>")
         html.append("</tr>")
     html.append("</tbody></table>")
@@ -118,7 +132,7 @@ def _themes_table_to_html(df: pd.DataFrame, theme_top_n: int = 3) -> str:
         for col in df.columns:
             val = row[col]
             cls = cell_class(col, val)
-            esc = html_lib.escape(str(val) if pd.notna(val) else "")
+            esc = html_lib.escape(_fmt_cell(val) if pd.notna(val) else "")
             if cls:
                 html.append(f"<td class='{cls}'>{esc}</td>")
             else:
@@ -126,6 +140,17 @@ def _themes_table_to_html(df: pd.DataFrame, theme_top_n: int = 3) -> str:
         html.append("</tr>")
     html.append("</tbody></table>")
     return "\n".join(html)
+
+
+def _console_fmt_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Format float columns to 2 decimal places for console output."""
+    if df.empty:
+        return df
+    out = df.copy()
+    for c in out.columns:
+        if pd.api.types.is_float_dtype(out[c]):
+            out[c] = out[c].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+    return out
 
 
 def print_console(
@@ -142,13 +167,14 @@ def print_console(
         print("--- A~F 랭크 (상위 20) ---")
         cols = ["ticker", "name", "grade", "score_total", "score_trading", "score_news", "score_theme", "score_valuation"]
         cols = [c for c in cols if c in ranked_df.columns]
-        print(ranked_df.head(20)[cols].to_string(index=False))
+        print(_console_fmt_df(ranked_df.head(20)[cols]).to_string(index=False))
     print("\n--- 주도 테마 (상위 10) ---")
-    print(themes_df.head(10).to_string(index=False))
+    print(_console_fmt_df(themes_df.head(10)).to_string(index=False))
     if not valuation_df.empty:
         print("\n--- 밸류에이션 요약 (저평가 종목) ---")
         low = valuation_df[valuation_df["valuation_label"] == "저평가"]
-        print(low[["ticker", "per", "pbr", "valuation_label"]].head(15).to_string(index=False))
+        sub = low[["ticker", "per", "pbr", "valuation_label"]].head(15)
+        print(_console_fmt_df(sub).to_string(index=False))
     print("\n--- 뉴스 수 (종목별) ---")
     if not news_df.empty:
         nc = news_df.groupby("ticker").size().sort_values(ascending=False).head(10)
@@ -224,16 +250,7 @@ def save_html(
     html.append(f"<div class='card'>A등급 <strong>{n_a}</strong>건</div>")
     html.append("</div>")
 
-    # A~F 랭크 (with change_pct color)
-    html.append("<div class='section'><h2>A~F 랭크</h2>")
-    rank_display = ranked_df.copy()
-    if "change_pct" not in rank_display.columns and "change_pct" in screened.columns and not screened.empty:
-        ch = screened.set_index("ticker")["change_pct"]
-        rank_display["change_pct"] = rank_display["ticker"].map(ch)
-    html.append(_df_to_html_with_change_color(rank_display.head(50), change_pct_columns=["change_pct"]))
-    html.append("</div>")
-
-    # 추천 종목 (recommended_df or filter from ranked_df)
+    # 1) 추천 종목 (recommended_df or filter from ranked_df)
     rec_df = recommended_df
     if rec_df is None and not ranked_df.empty and "grade" in ranked_df.columns:
         cfg = load_config()
@@ -257,13 +274,13 @@ def save_html(
         html.append("<p class='recommend-disclaimer'>참고용이며, 투자 책임은 본인에게 있습니다.</p>")
         html.append("</div>")
 
-    # 주도 테마 + 차트 (1~3위 .theme-top, 차트 상위 3개 다른 색)
+    # 2) 주도 테마 + 차트 (1~3위 .theme-top, 차트 상위 3개 다른 색)
     html.append("<div class='section'><h2>주도 테마</h2>")
     if not themes_df.empty:
         html.append(_themes_table_to_html(themes_df))
     if not themes_df.empty and "theme_strength" in themes_df.columns:
         labels = themes_df["sector"].tolist()
-        values = themes_df["theme_strength"].tolist()
+        values = [round(float(v), 2) for v in themes_df["theme_strength"].tolist()]
         n = len(values)
         colors = ["rgba(25,118,210,0.85)" if i < 3 else "rgba(25,118,210,0.5)" for i in range(n)]
         html.append("<div style='max-width:600px;height:280px;margin:16px 0'><canvas id='themeChart'></canvas></div>")
@@ -273,12 +290,16 @@ def save_html(
         html.append("</script>")
     html.append("</div>")
 
-    # 밸류에이션
-    html.append("<div class='section'><h2>밸류에이션 (PER/PBR)</h2>")
-    html.append(valuation_df.to_html(index=False, classes="report-table"))
+    # 3) A~F 랭크 (with change_pct color)
+    html.append("<div class='section'><h2>A~F 랭크</h2>")
+    rank_display = ranked_df.copy()
+    if "change_pct" not in rank_display.columns and "change_pct" in screened.columns and not screened.empty:
+        ch = screened.set_index("ticker")["change_pct"]
+        rank_display["change_pct"] = rank_display["ticker"].map(ch)
+    html.append(_df_to_html_with_change_color(rank_display.head(50), change_pct_columns=["change_pct"]))
     html.append("</div>")
 
-    # 선별 종목 (상승/하락 색상)
+    # 4) 선별 종목 (상승/하락 색상)
     html.append("<div class='section'><h2>선별 종목</h2>")
     html.append(_df_to_html_with_change_color(screened))
     html.append("</div>")
@@ -290,6 +311,7 @@ def save_html(
     html.append("<div class='section'><h2>뉴스 요약</h2>")
     if news_df.empty:
         html.append("<p>수집된 뉴스가 없습니다.</p>")
+        html.append("<p style='font-size:0.9em;color:#666'>선택한 날짜와 같은 날짜 뉴스만 표시됩니다. config에서 target_date_tolerance_days를 1로 하거나 parse_fail_keep을 true로 설정하면 더 많은 뉴스가 포함될 수 있습니다.</p>")
     else:
         for ticker, grp in news_df.groupby("ticker"):
             name = grp["name"].iloc[0] if "name" in grp.columns else ticker
@@ -360,10 +382,27 @@ def save_html(
     html.append("<div class='section'><h2>뉴스 전체</h2>")
     if news_df.empty:
         html.append("<p>수집된 뉴스가 없습니다. config에서 filter_by_target_date를 false로 하거나 target_date_tolerance_days를 늘려 보세요.</p>")
+        html.append("<p style='font-size:0.9em;color:#666'>선택한 날짜와 같은 날짜 뉴스만 표시됩니다. config에서 target_date_tolerance_days를 1로 하거나 parse_fail_keep을 true로 설정하면 더 많은 뉴스가 포함될 수 있습니다.</p>")
     else:
         html.append("<div class='scroll-wrap'>")
         html.append(_news_df_to_html(news_df))
         html.append("</div>")
+    html.append("</div>")
+
+    # 5) 밸류에이션 (종목명 포함, 숫자 소수점 2자리)
+    html.append("<div class='section'><h2>밸류에이션 (PER/PBR)</h2>")
+    if not screened.empty and "ticker" in screened.columns and "name" in screened.columns and not valuation_df.empty:
+        name_df = screened[["ticker", "name"]].drop_duplicates("ticker")
+        name_df["ticker"] = name_df["ticker"].astype(str).str.zfill(6)
+        val_copy = valuation_df.copy()
+        val_copy["ticker"] = val_copy["ticker"].astype(str).str.zfill(6)
+        val_display = val_copy.merge(name_df, on="ticker", how="left")
+        rest = [c for c in val_display.columns if c not in ("ticker", "name")]
+        val_display = val_display[["ticker", "name"] + rest]
+        val_display["name"] = val_display["name"].fillna("")
+        html.append(_df_to_html_with_change_color(val_display))
+    else:
+        html.append(_df_to_html_with_change_color(valuation_df))
     html.append("</div>")
 
     html.append("</body></html>")

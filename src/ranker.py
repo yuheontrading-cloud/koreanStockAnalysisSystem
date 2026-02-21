@@ -57,7 +57,11 @@ def run_ranker(
     w_news = w.get("weight_news", 0.30)
     w_theme = w.get("weight_theme", 0.30)
     w_valuation = w.get("weight_valuation", 0.15)
+    theme_rank_exponential = w.get("theme_rank_exponential", False)
     theme_top_bonus = w.get("theme_top_bonus", 0)
+    theme_top_bonus_1 = w.get("theme_top_bonus_1")
+    theme_top_bonus_2 = w.get("theme_top_bonus_2")
+    theme_top_bonus_3 = w.get("theme_top_bonus_3")
 
     df = screened_df[["ticker", "name", "volume", "trading_value"]].copy()
     df["ticker"] = df["ticker"].astype(str).str.zfill(6)
@@ -77,12 +81,24 @@ def run_ranker(
     df["sector"] = df["ticker"].map(ticker_to_sector)
     max_rank = max(sector_rank.values()) if sector_rank else 1
     df["theme_rank"] = df["sector"].map(sector_rank).fillna(max_rank + 1).astype(int)
-    # rank 1 -> 100, rank max_rank -> 0
-    df["score_theme"] = 100 - (df["theme_rank"] - 1).clip(0) / max(1, max_rank) * 100
-    # 1~3위 주도 테마 소속 종목 가산
-    if theme_top_bonus > 0:
-        bonus = (df["theme_rank"] <= 3).astype(int) * theme_top_bonus
-        df["score_theme"] = (df["score_theme"] + bonus).clip(upper=100)
+    if theme_rank_exponential:
+        # 비선형: 1위=100, 2위~하위 점수 차이 확대
+        df["score_theme"] = (
+            100
+            * ((max_rank - df["theme_rank"] + 1).clip(0) / max(1, max_rank)) ** 2
+        )
+    else:
+        df["score_theme"] = 100 - (df["theme_rank"] - 1).clip(0) / max(1, max_rank) * 100
+    # 1~3위 주도 테마 차등 가산 (theme_top_bonus_1/2/3 우선, 없으면 theme_top_bonus)
+    b1 = theme_top_bonus_1 if theme_top_bonus_1 is not None else theme_top_bonus
+    b2 = theme_top_bonus_2 if theme_top_bonus_2 is not None else theme_top_bonus
+    b3 = theme_top_bonus_3 if theme_top_bonus_3 is not None else theme_top_bonus
+    bonus = (
+        (df["theme_rank"] == 1).astype(int) * (b1 or 0)
+        + (df["theme_rank"] == 2).astype(int) * (b2 or 0)
+        + (df["theme_rank"] == 3).astype(int) * (b3 or 0)
+    )
+    df["score_theme"] = (df["score_theme"] + bonus).clip(upper=100)
 
     # Valuation score: 저평가=high, 적정=mid, 고평가=low
     val_map = {"저평가": 100, "적정": 50, "고평가": 0, "N/A": 50}

@@ -16,18 +16,32 @@ _news_fallback_warned = False
 
 
 def _parse_pubdate_to_yyyymmdd(pub_date: str) -> str | None:
-    """Parse RFC 2822 or similar to YYYYMMDD. Returns None if unparseable."""
+    """Parse RFC 2822, ISO 8601, or similar to YYYYMMDD. Returns None if unparseable."""
     if not pub_date or not isinstance(pub_date, str):
         return None
     s = pub_date.strip()
     # RFC 2822: Mon, 26 Aug 2024 17:32:00 +0900
-    for fmt in ("%a, %d %b %Y %H:%M:%S %z", "%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%d %H:%M:%S", "%Y.%m.%d"):
+    strptime_fmts = [
+        "%a, %d %b %Y %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S %Z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y.%m.%d",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y%m%d",
+    ]
+    for fmt in strptime_fmts:
         try:
-            dt = datetime.strptime(s[: min(len(s), 30)], fmt.strip())
+            part = s[: min(len(s), 30)]
+            dt = datetime.strptime(part, fmt.strip())
             return dt.strftime("%Y%m%d")
         except Exception:
             continue
-    # YYYYMMDD already
+    # ISO 8601: 2024-08-26T17:32:00+09:00 or 2024-08-26T17:32:00Z
+    iso = re.search(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if iso:
+        return iso.group(1) + iso.group(2) + iso.group(3)
+    # YYYYMMDD or other numeric date
     m = re.search(r"(\d{4})[-./]?(\d{2})[-./]?(\d{2})", s)
     if m:
         return m.group(1) + m.group(2) + m.group(3)
@@ -198,10 +212,14 @@ def run_news_collector(
     fetch_body = news_cfg.get("fetch_article_body", True)
     summary_max = news_cfg.get("summary_max_chars", 300)
     max_fetch_body = news_cfg.get("max_articles_fetch_body", 5)
+    debug = news_cfg.get("debug", False)
     cred = get_naver_credentials()
     has_cred = bool(cred.get("client_id") and cred.get("client_secret"))
 
     rows = []
+    _debug_total = 0
+    _debug_parse_fail = 0
+    _debug_filtered_date = 0
     for _, row in screened_df.iterrows():
         ticker = str(row["ticker"]).zfill(6)
         name = row.get("name", ticker)
@@ -217,17 +235,21 @@ def run_news_collector(
         for idx, it in enumerate(items):
             news_date = it.get("pubDate") or it.get("date") or ""
             if filter_by_date and target_date:
+                _debug_total += 1
                 parsed = _parse_pubdate_to_yyyymmdd(news_date)
                 if parsed is None:
+                    _debug_parse_fail += 1
                     if not parse_fail_keep:
                         continue
                 else:
                     if tolerance_days == 0:
                         if parsed != target_date:
+                            _debug_filtered_date += 1
                             continue
                     else:
                         diff = abs(_days_diff_yyyymmdd(parsed, target_date))
                         if diff > tolerance_days:
+                            _debug_filtered_date += 1
                             continue
             body_summary = ""
             if fetch_body and idx < max_fetch_body:
@@ -249,6 +271,8 @@ def run_news_collector(
             })
 
     df = pd.DataFrame(rows)
+    if debug and filter_by_date and target_date:
+        print(f"[뉴스 디버그] 날짜 필터 대상 {_debug_total}건, 파싱 실패 {_debug_parse_fail}건, 날짜 불일치 제외 {_debug_filtered_date}건 → 수집 {len(rows)}건")
     if df.empty:
         df["news_body_summary"] = []
     elif "news_body_summary" not in df.columns:
