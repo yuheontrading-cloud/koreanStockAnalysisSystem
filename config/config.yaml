@@ -1,0 +1,48 @@
+# 한국 주식 분석 추천 프로그램 설정
+
+# 선별 조건: (거래량>=min_volume & 거래대금>=min_trading_value) 또는 상한가
+screener:
+  min_volume: 1_000_000       # 거래량 최소 100만주
+  min_trading_value: 10_000_000_000  # 거래대금 최소 100억 원
+  include_limit_up: true      # 상한가 종목 포함 여부
+  limit_up_change_pct: 29.5   # 이 등락률 이상이면 상한가로 간주 (%)
+
+# 뉴스 수집 (네이버 API 사용 시 .env에 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 설정)
+news:
+  use_api: true               # true: 네이버 API, false: 스크래핑
+  max_articles_per_stock: 20 # 종목당 수집 뉴스 수
+  request_delay_seconds: 0.3  # 스크래핑 시 요청 간격
+  filter_by_target_date: true # 선택한 날짜 뉴스만 포함
+  target_date_tolerance_days: 1 # 0=해당일만, 1 이상=전후 N일 뉴스 포함
+  parse_fail_keep: true        # 날짜 파싱 실패 시 해당 뉴스 유지(true) 여부
+  fetch_article_body: true    # 링크로 본문 수집 후 요약
+  summary_max_chars: 300      # 요약 글자 수 (본문 앞 N자)
+  article_request_delay_seconds: 0.5 # 본문 요청 간격
+  max_articles_fetch_body: 5  # 종목당 본문 수집할 뉴스 수 (요청 수 제한)
+
+# 테마 분석
+theme:
+  top_n_sectors: 10          # 상위 N개 주도 테마
+  weight_by_change_pct: true # true: 상승률 기준 주도 테마, false: 종목 수 기준
+
+# 밸류에이션 (업종 대비 판정)
+valuation:
+  # 업종 대비 PER/PBR 비율 기준 (1.0 = 업종 평균과 동일)
+  undervalued_per_ratio: 0.8   # PER이 업종평균의 80% 이하면 저평가
+  overvalued_per_ratio: 1.2    # PER이 업종평균의 120% 초과면 고평가
+  undervalued_pbr_ratio: 0.8
+  overvalued_pbr_ratio: 1.2
+
+# 랭킹 가중치 (합계 1.0)
+ranker:
+  weight_trading: 0.25   # 거래대금/거래량
+  weight_news: 0.30      # 뉴스/관심 (영향도 상향)
+  weight_theme: 0.30     # 테마 강도 (주도 테마 반영 강화)
+  weight_valuation: 0.15 # 밸류(저평가 가산)
+  theme_top_bonus: 15    # 1~3위 주도 테마 소속 종목에 score_theme 가산점
+
+# 출력
+output:
+  save_csv: true
+  save_html: true
+  save_excel: false
