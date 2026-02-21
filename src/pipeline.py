@@ -50,6 +50,24 @@ def run_pipeline(target_date: str, save_output: bool = True):
         valuation_df,
     )
 
+    # 5b. 추천 종목 (랭크 기반)
+    recommended_df = None
+    if not ranked_df.empty and "grade" in ranked_df.columns:
+        rec_cfg = cfg.get("recommend", {})
+        min_grade = rec_cfg.get("min_grade", "B")
+        max_count = rec_cfg.get("max_count", 20)
+        grade_order = ["A", "B", "C", "D", "E", "F"]
+        try:
+            min_idx = grade_order.index(min_grade)
+            allowed = set(grade_order[: min_idx + 1])
+        except ValueError:
+            allowed = {"A", "B"}
+        recommended_df = (
+            ranked_df[ranked_df["grade"].isin(allowed)]
+            .sort_values("score_total", ascending=False)
+            .head(max_count)
+        )
+
     # 6. Report
     report.print_console(
         target_date=target_date,
@@ -64,7 +82,7 @@ def run_pipeline(target_date: str, save_output: bool = True):
         out_dir = Path(__file__).resolve().parent.parent / "output" / target_date
         out_dir.mkdir(parents=True, exist_ok=True)
         if save_csv:
-            report.save_csv(out_dir, screened, themes_df, valuation_df, news_df, ranked_df)
+            report.save_csv(out_dir, screened, themes_df, valuation_df, news_df, ranked_df, recommended_df=recommended_df)
         if save_html:
             report.save_html(
                 out_dir,
@@ -74,6 +92,7 @@ def run_pipeline(target_date: str, save_output: bool = True):
                 valuation_df=valuation_df,
                 news_df=news_df,
                 ranked_df=ranked_df,
+                recommended_df=recommended_df,
             )
         if save_excel:
             report.save_excel(out_dir, screened, themes_df, valuation_df, news_df, ranked_df)
